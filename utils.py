@@ -247,7 +247,7 @@ def GetModelWeights(file,initial = False,device='cpu'):
     
 
 
-def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False):
+def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,dir=""):
     '''
     
     
@@ -265,9 +265,9 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False):
     assert not (em and Density)
     
     if NetworkType == 'RNN':
-        dir = "RNN"
+        dir = os.path.join(dir,"RNN")
     elif NetworkType == "Kuramoto":
-        dir = "Kuramoto"
+        dir = os.path.join("Kuramoto")
     
     if Density:
         dir = os.path.join(dir,"Density")
@@ -293,7 +293,7 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False):
         
     return {'nNN':nNN,'p':p,'gain':gain}
   
-def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False,em = False):
+def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False,em = False,dir = ""):
     '''
     Return Trained Model Filenames with particular number of nearest neighbors and probability of rewiring
 
@@ -314,9 +314,9 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     '''
     assert not (em and density)
     if NetworkType == 'RNN':
-        dir = "RNN"
+        dir = os.path.join(dir,"RNN")
     elif NetworkType == "Kuramoto":
-        dir = "Kuramoto"
+        dir = os.path.join(dir,"Kuramoto")
     #if density:
     #    dir = os.path.join(dir,"Density")
     if noise:
@@ -404,7 +404,7 @@ def GetMNIST_TestData(net):
 
 
 
-def GetMNISTData(net):
+def GetMNIST_TrainData(net):
     '''
     
     Parameters
@@ -420,5 +420,5 @@ def GetMNISTData(net):
     for images,labels in iter(net.dl.train_loader):
         images = images.reshape(net.batch_size, net.ninputs, int(images.shape[1]/net.ninputs))
         images = images.permute(2,0,1)
-        yield images,labels
+        return images,labels
                     

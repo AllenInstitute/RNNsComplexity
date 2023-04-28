@@ -1,1 +1,1 @@
-# sMNIST_IntegratedInformation
+# RNNsComplexity

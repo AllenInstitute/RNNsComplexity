@@ -293,7 +293,7 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,dir=""
         
     return {'nNN':nNN,'p':p,'gain':gain}
   
-def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False,em = False,dir = ""):
+def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False,em = False,dir = "",suffix=""):
     '''
     Return Trained Model Filenames with particular number of nearest neighbors and probability of rewiring
 
@@ -324,13 +324,13 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     
     
     if not density and not em:
-        files = glob.glob(os.path.join(dir,"Gaussian","WattsStrogatz_198*ninputs_28*Run_[0-9]*"))
+        files = glob.glob(os.path.join(dir,"Gaussian","WattsStrogatz_198*ninputs_28*"+suffix+"Run_[0-9]*"))
         files = [f for f in files if 'nNN'+str(nNN) in f and 'p_'+"{:.1f}".format(p) in f and 'gain_'+str(gain) in f]
     elif density:
-        files = glob.glob(os.path.join(dir,"Density","Density_198*ninputs_28*Run_[0-9]*"))
+        files = glob.glob(os.path.join(dir,"Density","Density_198*ninputs_28*"+suffix+"Run_[0-9]*"))
         files = [f for f in files if str(nNN) in f  and 'gain_'+str(gain) in f]
     elif em:
-        files = glob.glob(os.path.join(dir,"EM_column","EM_column_198*ninputs_28*Run_[0-9]*"))
+        files = glob.glob(os.path.join(dir,"EM_column","EM_column_198*ninputs_28*"+suffix+"Run_[0-9]*"))
         files = [f for f in files if str(nNN) in f  and 'gain_'+str(gain) in f]
         
     files =[f for f in files if  ".png" not in f]

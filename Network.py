@@ -529,7 +529,7 @@ class Net(nn.Module):
         
         
         super(Net,self).__init__()
-        self.OutputDir = os.path.join(ModelType,"Gaussian")
+        self.OutputDir = os.path.join(ModelType,"corrected_test_batch")
         if noise:
             self.OutputDir = os.path.join(self.OutputDir,"noise")
             
@@ -774,22 +774,23 @@ class Net(nn.Module):
         None.
 
        '''
-       images,labels = next(iter(self.dl.test_loader))
        celoss = nn.CrossEntropyLoss()
+       accuracy = []
        with torch.no_grad():
-           if not pixel_by_pixel:
-               images = images.reshape(self.batch_size, self.ninputs, int(images.shape[1]/self.ninputs))
-               images = images.permute(2,0,1)
-           else:
-               images = images.permute(1,0,2)
-           images, labels = images.to(device),labels.to(device)
-           output = self.model(images)
-           loss = celoss(output, labels)
-           self.ValidationLoss.append(loss.cpu().numpy())
-           pred = torch.argmax(output, dim=1)
-           correct_digit = pred.eq(labels)
-           accuracy = 100.*torch.sum(correct_digit)/len(labels)
-           self.ValidationAccuracy.append(accuracy.cpu().numpy())
+           for images,labels in self.dl.test_loader:
+               if not pixel_by_pixel:
+                   images = images.reshape(self.batch_size, self.ninputs, int(images.shape[1]/self.ninputs))
+                   images = images.permute(2,0,1)
+               else:
+                   images = images.permute(1,0,2)
+               images, labels = images.to(device),labels.to(device)
+               output = self.model(images)
+               loss = celoss(output, labels)
+               self.ValidationLoss.append(loss.cpu().numpy())
+               pred = torch.argmax(output, dim=1)
+               correct_digit = pred.eq(labels)
+               accuracy = 100.*torch.sum(correct_digit)/len(labels)
+               self.ValidationAccuracy.append(accuracy.cpu().numpy())
            
     def train(self,save_gradients = False, pixel_by_pixel= False,lr=0.00001):
         '''
@@ -1007,6 +1008,6 @@ if __name__ == "__main__":
     
     if suffix is not None:
         net.OutFile = "_".join((net.OutFile,suffix))
-        
+    print(net.OutputDir)
         
     net.train(save_gradients = save_gradients,pixel_by_pixel = pixel_by_pixel,lr = lr)

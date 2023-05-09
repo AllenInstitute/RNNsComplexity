@@ -529,7 +529,7 @@ class Net(nn.Module):
         
         
         super(Net,self).__init__()
-        self.OutputDir = os.path.join(ModelType,"corrected_test_batch")
+        self.OutputDir = os.path.join(ModelType)
         if noise:
             self.OutputDir = os.path.join(self.OutputDir,"noise")
             
@@ -681,6 +681,7 @@ class Net(nn.Module):
             vals = self.rng.normal(0,std,len(nz[0]))
             CM[nz] = vals
             CM = torch.from_numpy(CM.reshape((self.nhidden,self.nhidden))).type(torch.float32)
+            self.OutputDir = os.path.join(self.OutputDir, "Gaussian")
             self.OutFile = self.OutFile + "_".join(("nNN"+str(nNN),"p",str(p),"gain",str(gain)))
         elif ConnType == 'Density':
             f = open('../MesoScope/Cortex_Thal_Cla_HippN198.sav', 'rb')
@@ -697,7 +698,7 @@ class Net(nn.Module):
             CM[nz] = (CM[nz] - np.mean(CM[nz]))/np.std(CM[nz])
             CM = self.gain*std*CM
             CM = torch.from_numpy(CM).type(torch.float32)
-            self.OutputDir = os.path.join("RNN","Density")
+            self.OutputDir = os.path.join(self.OutputDir, "Density")
             self.OutFile = self.OutFile + "_Density_gain_"+str(gain)
         elif ConnType =="EM_column":
             connectome_dir = "/allen/programs/mindscope/workgroups/tiny-blue-dot/EM/connectomes"
@@ -724,7 +725,7 @@ class Net(nn.Module):
             CM[nz] = (CM[nz] - np.mean(CM[nz]))/np.std(CM[nz])
             CM[nz] = self.gain*CM[nz]*std 
             CM = torch.from_numpy(CM).type(torch.float32)
-            self.OutputDir = os.path.join("RNN","EM_column")
+            self.OutputDir = os.path.join(self.OutputDir, "EM_column")
             self.OutFile = self.OutFile + "_gain_"+str(gain)            
         elif ConnType == 'NearestNeighbors' :
             self.OutFile = self.OutFile + "_".join(("Neighborhood"+Neighborhood))

@@ -531,8 +531,9 @@ class Net(nn.Module):
         super(Net,self).__init__()
         self.OutputDir = os.path.join(ModelType)
         if noise:
-            self.OutputDir = os.path.join(self.OutputDir,"noise")
-            
+            self.noise = True
+        else:
+            self.noise = False
         self.ModelType = ModelType
         self.batch_size= batch_size
         self.ninputs = ninputs
@@ -682,7 +683,10 @@ class Net(nn.Module):
             CM[nz] = vals
             CM = torch.from_numpy(CM.reshape((self.nhidden,self.nhidden))).type(torch.float32)
             self.OutputDir = os.path.join(self.OutputDir, "Gaussian")
+            if self.noise:
+                self.OutputDir = os.path.join(self.OutputDir, "noise")
             self.OutFile = self.OutFile + "_".join(("nNN"+str(nNN),"p",str(p),"gain",str(gain)))
+            
         elif ConnType == 'Density':
             f = open('../MesoScope/Cortex_Thal_Cla_HippN198.sav', 'rb')
             df = pickle.load(f)

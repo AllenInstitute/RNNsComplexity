@@ -247,7 +247,7 @@ def GetModelWeights(file,initial = False,device='cpu'):
     
 
 
-def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,dir=""):
+def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,digits = False, pixel = False, narrow = False, suffix="", add_dir=None):
     '''
     
     
@@ -265,25 +265,45 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,dir=""
     assert not (em and Density)
     
     if NetworkType == 'RNN':
-        dir = os.path.join(dir,"RNN")
+        dir = "RNN"
     elif NetworkType == "Kuramoto":
-        dir = os.path.join("Kuramoto")
+        dir = "Kuramoto"
     
+    if digits or narrow or pixel:
+        if digits:
+            dir = os.path.join(dir, "digits")
+        elif pixel:
+            dir = os.path.join(dir, "pixel_by_pixel")
+        elif narrow:
+            dir = os.path.join(dir, "narrow")
+     
+    if add_dir is not None:
+        add_dir =  add_dir
+    else:
+        add_dir = ""
+        
+    nNN = []
+    p = []
+    gain = []
     if Density:
         dir = os.path.join(dir,"Density")
         files = glob.glob(os.path.join(dir,"Density_198*ninputs_28*Run_[0-9]*"))
-        nNN = [198]
-        p = [0]
-        gain = list(set([float(file.split("gain_")[1].split("_")[0]) for file in files]))
-        gain.sort()
+        if len(files) >0:
+            nNN = [198]
+            p = [0]
+            gain = list(set([float(file.split("gain_")[1].split("_")[0]) for file in files]))
+            gain.sort()
     elif em:
-        files = glob.glob(os.path.join(dir,"EM_column","EM_column_198*ninputs_28*Run_[0-9]*"))
-        nNN = [198]
-        p = [0]
-        gain = list(set([float(file.split("gain_")[1].split("_")[0]) for file in files]))
-        gain.sort()
+        files = glob.glob(os.path.join(dir,"EM_column","EM_column_198*ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
+        files.extend(glob.glob(os.path.join(dir,"EM_column","EM_column_198*ninputs_28_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+        files.extend(glob.glob(os.path.join(dir,"EM_column","EM_column_198*ninputs_28_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+        if len(files) >0:
+            nNN = [198]
+            p = [0]
+            gain = list(set([float(file.split("gain_")[1].split("_")[0]) for file in files]))
+            gain.sort()
     else:
-        files = glob.glob(os.path.join(dir,"Gaussian","WattsStrogatz_198*ninputs_28*Run_[0-9]*"))
+        files = glob.glob(os.path.join(dir,"Gaussian",add_dir,"WattsStrogatz_*ninputs_*"+suffix+"Run_[0-9]*"))
         nNN = list(set([ int(file.split('nNN')[1].split("_")[0]) for file in files] ))
         p = list(set([ float(file.split('p_')[1].split("_")[0]) for file in files] ))
         gain = list(set([float(file.split("gain_")[1].split("_")[0]) for file in files]))
@@ -293,7 +313,7 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,dir=""
         
     return {'nNN':nNN,'p':p,'gain':gain}
   
-def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False,em = False,dir = "",suffix=""):
+def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False,em = False,digits = False,pixel = False, narrow = False, add_dir = None,suffix=""):
     '''
     Return Trained Model Filenames with particular number of nearest neighbors and probability of rewiring
 
@@ -314,9 +334,17 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     '''
     assert not (em and density)
     if NetworkType == 'RNN':
-        dir = os.path.join(dir,"RNN")
+        dir = "RNN"
     elif NetworkType == "Kuramoto":
-        dir = os.path.join(dir,"Kuramoto")
+        dir = "Kuramoto"
+    
+    if digits or narrow or pixel:
+        if digits:
+            dir = os.path.join(dir, "digits")
+        elif pixel:
+            dir = os.path.join(dir, "pixel_by_pixel")
+        elif narrow:
+            dir = os.path.join(dir, "narrow")
     
     if density:
         dir = os.path.join(dir, "Density")
@@ -328,19 +356,31 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     if noise:
         dir = os.path.join(dir, "noise")
     
-    
+    if add_dir is not None:
+        dir = os.path.join(dir,add_dir)
+        
     if not density and not em:
-        files = glob.glob(os.path.join(dir,"WattsStrogatz_198*ninputs_28*"+suffix+"Run_[0-9]*"))
+        files = glob.glob(os.path.join(dir,"WattsStrogatz_*ninputs_*nNN*_p*_gain_???"+suffix+"_Run_[0-9]*"))
+        files.extend(glob.glob(os.path.join(dir,"WattsStrogatz_*ninputs_*nNN*_p_*_gain_????"+suffix+"_Run_[0-9]*")))
         files = [f for f in files if 'nNN'+str(nNN) in f and 'p_'+"{:.1f}".format(p) in f and 'gain_'+str(gain) in f]
     elif density:
-        files = glob.glob(os.path.join(dir,"Density_198*ninputs_28*"+suffix+"Run_[0-9]*"))
+        files = glob.glob(os.path.join(dir,"Density_198*ninputs_28_Density_gain_???"+suffix+"_Run_[0-9]*"))
+        files.extend(glob.glob(os.path.join(dir,"Density_198*ninputs_28_Density_gain_????"+suffix+"_Run_[0-9]*")))
         files = [f for f in files if str(nNN) in f  and 'gain_'+str(gain) in f]
     elif em:
-        files = glob.glob(os.path.join(dir,"EM_column_198*ninputs_28*"+suffix+"Run_[0-9]*"))
+        print(dir)
+        files = glob.glob(os.path.join(dir,"EM_column_198*ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
+        files.extend(glob.glob(os.path.join(dir,"EM_column_198*ninputs_*_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+        files.extend(glob.glob(os.path.join(dir,"EM_column_198*ninputs_*_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))      
         files = [f for f in files if str(nNN) in f  and 'gain_'+str(gain) in f]
+       
         
     files =[f for f in files if  ".png" not in f]
     files =[f for f in files if  ".npy" not in f]
+    runs = [f.split("Run_")[1] for f in files]
+    runs = np.array(runs).astype(int)
+    order = np.argsort(runs)
+    files = list(np.array(files)[order])
     
     if len(files) < 1:
         print("No Files found with specified run params")

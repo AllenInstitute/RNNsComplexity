@@ -19,6 +19,8 @@ import Parameters
 import argparse
 import sys
 import socket
+from scipy import stats
+
 hostname = socket.gethostname()
 if 'zuul' in hostname:
     sys.path.append("/home/dana/allen/programs/braintv/workgroups/tiny-blue-dot/GLIFS_ASC/main")
@@ -28,7 +30,7 @@ from models.networks import BNNFC
 
 rng = np.random.default_rng(seed = 8)
 nout = 10    #For sMNIST this should not change
-nepochs = 100
+
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
@@ -37,6 +39,54 @@ else:
 # if batch is size 5
 #Valid numbers for inputs include: 8,14,16,28,49,56,98,112,196,392
 
+class EarlyStopping(object):
+    def __init__(self, mode='min', min_delta=0, patience=10, percentage=False):
+        self.mode = mode
+        self.min_delta = min_delta
+        self.patience = patience
+        self.best = None
+        self.num_bad_epochs = 0
+        self.is_better = None
+        self._init_is_better(mode, min_delta, percentage)
+
+        if patience == 0:
+            self.is_better = lambda a, b: True
+            self.step = lambda a: False
+
+    def step(self, metrics):
+        if self.best is None:
+            self.best = metrics
+            return False
+
+        if torch.isnan(metrics):
+            return True
+
+        if self.is_better(metrics, self.best):
+            self.num_bad_epochs = 0
+            self.best = metrics
+        else:
+            self.num_bad_epochs += 1
+
+        if self.num_bad_epochs >= self.patience and metrics > 90:
+            return True
+
+        return False
+
+    def _init_is_better(self, mode, min_delta, percentage):
+        if mode not in {'min', 'max'}:
+            raise ValueError('mode ' + mode + ' is unknown!')
+        if not percentage:
+            if mode == 'min':
+                self.is_better = lambda a, best: a < best - min_delta
+            if mode == 'max':
+                self.is_better = lambda a, best: a > best + min_delta
+        else:
+            if mode == 'min':
+                self.is_better = lambda a, best: a < best - (
+                            best * min_delta / 100)
+            if mode == 'max':
+                self.is_better = lambda a, best: a > best + (
+                            best * min_delta / 100)
 
 
 def BinaryConnectedNeighbors(nOsc,k,p,Dists,Neighborhood = "Target",reverse=False):
@@ -138,7 +188,7 @@ def get_ConnMatrix(self,Conn = "Density"):
         return df['names']
         
 class RNN(nn.Module):
-    def __init__(self, n_inp, n_hid, n_out,OutputDir, batch_size,input_bias,noise,device):
+    def __init__(self, n_inp, n_hid, n_out,OutputDir, batch_size,input_bias,noise,device,nonlinearity='tanh'):
         super(RNN, self).__init__()
         self.n_hid = n_hid
         self.batch_size = batch_size
@@ -502,7 +552,7 @@ class Kuramoto(nn.Module):
 
 class Net(nn.Module):
     #Main network class
-    def __init__(self,ModelType,ninputs, nhidden,batch_size,input_bias=True,posW = False,digits = None,noise=False,device=device):
+    def __init__(self,ModelType,ninputs, nhidden,batch_size,input_bias=True,posW = False,digits = None,noise=False,device=device,nonlinearity = 'tanh',pixel_by_pixel= False):
         '''
         Params
         
@@ -530,6 +580,13 @@ class Net(nn.Module):
         
         super(Net,self).__init__()
         self.OutputDir = os.path.join(ModelType)
+        if digits is not None:
+            self.OutputDir = os.path.join(self.OutputDir,"digits")
+        if pixel_by_pixel or ninputs < 28:
+            self.OutputDir = os.path.join(self.OutputDir, "pixel_by_pixel")
+        if nhidden < 109:
+            self.OutputDir = os.path.join(self.OutputDir, "narrow")
+        
         if noise:
             self.noise = True
         else:
@@ -545,7 +602,7 @@ class Net(nn.Module):
         torch.manual_seed(self.seed)
         
         if ModelType =="RNN":
-            self.model = RNN(ninputs,nhidden,nout,self.OutputDir,batch_size,input_bias,noise,device)
+            self.model = RNN(ninputs,nhidden,nout,self.OutputDir,batch_size,input_bias,noise,device,nonlinearity)
         elif ModelType=="ps":
             self.model = psRNN(ninputs,nhidden,nout,self.OutputDir,batch_size,self.rng,input_bias,device)
         elif ModelType=="Kuramoto":
@@ -606,7 +663,7 @@ class Net(nn.Module):
         self.model.plot(self.OutFile)
         
     
-    def Reinitialize(self,file,initial=False,device='cuda'):
+    def Reinitialize(self,file,initial=False,device='cpu'):
         '''
         Reinitialize model parameters from saved model 
 
@@ -683,6 +740,8 @@ class Net(nn.Module):
             CM[nz] = vals
             CM = torch.from_numpy(CM.reshape((self.nhidden,self.nhidden))).type(torch.float32)
             self.OutputDir = os.path.join(self.OutputDir, "Gaussian")
+            if not os.path.exists(self.OutputDir):
+                os.makedirs(self.OutputDir)
             if self.noise:
                 self.OutputDir = os.path.join(self.OutputDir, "noise")
             self.OutFile = self.OutFile + "_".join(("nNN"+str(nNN),"p",str(p),"gain",str(gain)))
@@ -692,8 +751,27 @@ class Net(nn.Module):
             df = pickle.load(f)
             f.close()
             CM= df['Density']
-            WS_fc_nz = 198*198 - 198
-            std = 1/np.sqrt(np.sqrt(WS_fc_nz))
+            if 'thresh' in suffix:
+               weights = CM.flatten() 
+               order = np.argsort(weights)
+               if "to" in suffix:
+                   thresh_to = int(suffix.split("to")[1].split("_")[0])
+                   thresh_to = (198*198) -  thresh_to  #matches sparsity of nNN 128
+               else:
+                   thresh_to = (198*198)  -  25344  #matches sparsity of nNN 128
+               weights[order[:thresh_to]] = 0.0
+               nz = np.nonzero(weights)[0].size
+               CM =  weights.reshape((self.nhidden, self.nhidden))
+            elif 'sparsify' in suffix:
+                weights = CM.flatten() 
+                nz = np.nonzero(weights)[0]
+                sparsify = rng.choice(nz,len(nz)-25344,replace = False)
+                weights[sparsify] =0.0
+                nz = np.nonzero(weights)[0].size
+                CM =  weights.reshape((self.nhidden, self.nhidden))
+            else:
+                nz = 198*198 - 198
+            std = 1/np.sqrt(np.sqrt(nz))
             nz = np.nonzero(CM)
             sign =[-1,1]
             signs = self.rng.choice(sign,len(nz[0]),replace=True)
@@ -704,8 +782,8 @@ class Net(nn.Module):
             CM = torch.from_numpy(CM).type(torch.float32)
             self.OutputDir = os.path.join(self.OutputDir, "Density")
             self.OutFile = self.OutFile + "_Density_gain_"+str(gain)
-        elif ConnType =="EM_column":
-            connectome_dir = "/allen/programs/mindscope/workgroups/tiny-blue-dot/EM/connectomes"
+        elif ConnType =="microns":
+            connectome_dir = "/allen/programs/mindscope/workgroups/tiny-blue-dot/EM/microns"
             CM = np.load(os.path.join(connectome_dir,"full_ground_truth_summed_weights.npy"))
             if 'sampled' in suffix:
                 #column_idxs = np.load(os.path.join(connectome_dir,"column_indexes_within_full_square_array.npy"))
@@ -721,6 +799,17 @@ class Net(nn.Module):
             CM = CM[idxs,:]
             CM = CM/np.max(np.abs(CM))
             nz = np.nonzero(CM)
+            if 'permuted' in suffix:
+                weights = CM.copy()
+                nzw = np.nonzero(weights)
+                shuffled_weights = rng.choice(weights[nzw].flatten(), nzw[0].size, replace = False)
+                di = np.diag_indices(self.nhidden)
+                di = np.ravel_multi_index(di, (self.nhidden, self.nhidden))
+                od = [o for o in np.arange(self.nhidden*self.nhidden) if o not in di]
+                locations = rng.choice(od,nzw[0].size, replace = False)
+                CM = np.zeros_like(CM)
+                locations = np.unravel_index(locations, (self.nhidden,self.nhidden))
+                CM[locations] = shuffled_weights
             if 'norm_198' in suffix:
                 WS_fc_nz = 198*198 - 198
                 std = 1/np.sqrt(np.sqrt(WS_fc_nz))
@@ -729,8 +818,54 @@ class Net(nn.Module):
             CM[nz] = (CM[nz] - np.mean(CM[nz]))/np.std(CM[nz])
             CM[nz] = self.gain*CM[nz]*std 
             CM = torch.from_numpy(CM).type(torch.float32)
-            self.OutputDir = os.path.join(self.OutputDir, "EM_column")
+            self.OutputDir = os.path.join(self.OutputDir, "EM_column","microns")
             self.OutFile = self.OutFile + "_gain_"+str(gain)            
+        elif ConnType == "v1dd":
+            if 'zuul' in hostname:
+                connectome_dir = "/home/dana/allen/programs/mindscope/workgroups/tiny-blue-dot/EM/v1dd"
+            else:
+                connectome_dir = "/allen/programs/mindscope/workgroups/tiny-blue-dot/EM/v1dd"
+            if "23_4" in suffix:
+                CM = np.load(os.path.join(connectome_dir,"23_4.npy"))
+                CM = CM/np.max(np.abs(CM))
+            elif "23" in suffix:
+                CM = np.load(os.path.join(connectome_dir,"23.npy"))
+                CM = CM/np.max(np.abs(CM))
+            elif "4_" in suffix:
+                CM = np.load(os.path.join(connectome_dir,"4.npy"))
+                CM = CM/np.max(np.abs(CM))    
+            if 'permuted' in suffix:
+                weights = CM.copy()
+                nzw = np.nonzero(weights)
+                shuffled_weights = rng.choice(weights[nzw].flatten(), nzw[0].size, replace = False)
+                di = np.diag_indices(self.nhidden)
+                di = np.ravel_multi_index(di, (self.nhidden, self.nhidden))
+                od = [o for o in np.arange(self.nhidden*self.nhidden) if o not in di]
+                locations = rng.choice(od,nzw[0].size, replace = False)
+                CM = np.zeros_like(CM)
+                locations = np.unravel_index(locations, (self.nhidden,self.nhidden))
+                CM[locations] = shuffled_weights
+            elif 'normed' in suffix:
+                nz = np.nonzero(CM)
+                std = 1/np.sqrt(np.sqrt(nz[0].size))
+                CM[nz]  = (CM[nz] - np.mean(CM[nz]))/np.std(CM[nz])
+                CM = CM*std*self.gain
+            elif 'transformed' in suffix:
+                nz = np.nonzero(CM)
+                std  = np.std(CM[nz])
+                transformed = CM.copy()
+                shift = np.abs(np.min(transformed)) 
+                shifted = transformed + shift + 1
+                CMt, _ = stats.boxcox(shifted[nz].flatten())
+                CMt = CMt -shift
+                CMt = CMt/np.max(CMt)
+                transformed[nz] = CMt
+                transformed[nz] = (transformed[nz] - np.mean(transformed[nz]))/np.std(transformed[nz])
+                transformed = self.gain*transformed*std
+                CM[nz] = transformed[nz]
+            CM = torch.from_numpy(CM).type(torch.float32)
+            self.OutputDir = os.path.join(self.OutputDir, "EM_column","v1dd")  
+            self.OutFile = self.OutFile + "_gain_"+str(gain)  
         elif ConnType == 'NearestNeighbors' :
             self.OutFile = self.OutFile + "_".join(("Neighborhood"+Neighborhood))
             
@@ -780,7 +915,7 @@ class Net(nn.Module):
 
        '''
        celoss = nn.CrossEntropyLoss()
-       accuracy = []
+       valacc = []
        with torch.no_grad():
            for images,labels in self.dl.test_loader:
                if not pixel_by_pixel:
@@ -795,8 +930,10 @@ class Net(nn.Module):
                pred = torch.argmax(output, dim=1)
                correct_digit = pred.eq(labels)
                accuracy = 100.*torch.sum(correct_digit)/len(labels)
+               valacc.append(accuracy)
                self.ValidationAccuracy.append(accuracy.cpu().numpy())
-           
+       return torch.mean(torch.stack(valacc))
+    
     def train(self,save_gradients = False, pixel_by_pixel= False,lr=0.00001):
         '''
         Model Training Function
@@ -806,6 +943,7 @@ class Net(nn.Module):
         None.
 
         '''
+        
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
         celoss = nn.CrossEntropyLoss()
         if save_gradients:
@@ -813,41 +951,42 @@ class Net(nn.Module):
             sample = list(rng.choice(len(self.dl.train_loader),100,replace= False))
         else:
             gradients = None
-        for epoch in range(nepochs):
-            print(epoch)
-            for i, (images, labels) in enumerate(self.dl.train_loader):
-                optimizer.zero_grad()
-                if not pixel_by_pixel:
-                    images = images.reshape(self.batch_size, self.ninputs, int(images.shape[1]/self.ninputs))
-                    images = images.permute(2,0,1).to(device)
-                else:
-                    images = images.permute(1,0,2).to(device)
-                labels = labels.to(device)
-                output = self.model(images)
-                loss = celoss(output, labels)
-                loss.backward()
-                #params = list(self.model.parameters())
-                #for p in params:
-                #    print(p.grad)
-                self.model.Clamp_Grads()
-                if self.posW:
-                    self.model.Clamp_Weights()
-                optimizer.step()
-                if save_gradients:
-                    if i in sample:
-                        grads = {}
-                        for param in net.named_parameters():
-                            if param[1].grad is not None:
-                                grads[param[0]] = param[1].grad.cpu().detach().numpy()
-                        gradients.append(grads) 
-                self.TrainingLoss.append(loss.detach().cpu().numpy())
-                pred = torch.argmax(output, dim=1)
-                correct_digit = pred.eq(labels)
-                accuracy = 100.*torch.sum(correct_digit)/len(labels)
-                self.TrainingAccuracy.append(accuracy.cpu().numpy())
-            self.test(pixel_by_pixel = pixel_by_pixel)
-            self.plot()
-            self.save(gradients = gradients)
+        
+        for i, (images, labels) in enumerate(self.dl.train_loader):
+            optimizer.zero_grad()
+            if not pixel_by_pixel:
+                images = images.reshape(self.batch_size, self.ninputs, int(images.shape[1]/self.ninputs))
+                images = images.permute(2,0,1).to(device)
+            else:
+                images = images.permute(1,0,2).to(device)
+            labels = labels.to(device)
+            output = self.model(images)
+            loss = celoss(output, labels)
+            loss.backward()
+            #params = list(self.model.parameters())
+            #for p in params:
+            #    print(p.grad)
+            self.model.Clamp_Grads()
+            if self.posW:
+                self.model.Clamp_Weights()
+            optimizer.step()
+            if save_gradients:
+                if i in sample:
+                    grads = {}
+                    for param in net.named_parameters():
+                        if param[1].grad is not None:
+                            grads[param[0]] = param[1].grad.cpu().detach().numpy()
+                    gradients.append(grads) 
+            self.TrainingLoss.append(loss.detach().cpu().numpy())
+            pred = torch.argmax(output, dim=1)
+            correct_digit = pred.eq(labels)
+            accuracy = 100.*torch.sum(correct_digit)/len(labels)
+            #print(accuracy)
+            self.TrainingAccuracy.append(accuracy.cpu().numpy())
+        valacc = self.test(pixel_by_pixel = pixel_by_pixel)
+        self.plot()
+        self.save(gradients = gradients)
+        return valacc
 
         
 
@@ -892,12 +1031,14 @@ class sMNIST():
             test_dataset.data, test_dataset.targets = test_dataset.data[test_indices], test_dataset.targets[test_indices]
             ntrain = len(train_dataset.targets)
             ntest = len(test_dataset.targets)
+            '''
             train_mod = ntrain % batch_size
             test_mod = ntest % batch_size
             if train_mod !=0:
                 train_dataset.data,train_dataset.targets = train_dataset.data[:-train_mod,...],train_dataset.targets[:-train_mod,...]
             if test_mod !=0:
                 test_dataset.data,test_dataset.targets = test_dataset.data[:-test_mod,...],test_dataset.targets[:-test_mod,...]
+            '''
         self.train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                                batch_size=batch_size,
                                                shuffle=True,drop_last = True)
@@ -933,6 +1074,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size',type = int, required = True)
     
     #optional
+    parser.add_argument('--nepochs',type = str, required = False)
     parser.add_argument('--nNN',type = int, required = False)
     parser.add_argument('--p',type = float, required = False)
     parser.add_argument('--reverse',type = bool, required = False)
@@ -940,12 +1082,14 @@ if __name__ == "__main__":
     parser.add_argument('--suffix',type = str,required = False)#Add more description to OutFile
     parser.add_argument('--input_bias',type=bool, required = False)
     parser.add_argument('--positive_weights_only',type=bool, required = False)
-    parser.add_argument('--digits',nargs='+',type = int,required = False)
     parser.add_argument('--init_gain',type = float, required = False)
     parser.add_argument('--add_noise',required=False,action='store_true')
     parser.add_argument("--save_gradients",required=False, action ='store_true')
     parser.add_argument("--pixel_by_pixel",required = False, action ="store_true")
     parser.add_argument("--lr", type=float,required= False)
+    parser.add_argument("--nonlinearity", type=str,required= False)
+    parser.add_argument("--digits",type=int,nargs='+',action = "extend",default = None,required = False)
+    parser.add_argument("--reload",type= str, required = False)
     
     args = parser.parse_args()
     if args.nNN is not None:
@@ -963,11 +1107,7 @@ if __name__ == "__main__":
         posW = args.positive_weights_only
     else:
         posW = False
-    if args.digits is not None:
-        digits = args.digits
-    else:
-        digits = None
-    
+     
     if args.init_gain is not None:
         init_gain = args.init_gain
         assert args.ModelType == 'RNN' or args.ModelType == "GLIFR"
@@ -984,9 +1124,6 @@ if __name__ == "__main__":
        
     if args.pixel_by_pixel is not None:
         pixel_by_pixel = args.pixel_by_pixel
-        if pixel_by_pixel:
-            suffix = suffix + "pixel_by_pixel"
-            assert args.ninputs == 1
     else:
         pixel_by_pixel = False
     
@@ -1005,14 +1142,82 @@ if __name__ == "__main__":
         lr = args.lr
     else:
         lr = 0.00001
-    print(lr)   
-    net = Net(args.ModelType,args.ninputs,args.nhidden,args.batch_size,input_bias=input_bias,posW = posW,digits = digits,noise=noise)
+        
+    if args.nepochs is not None:   
+        if  args.nepochs != 'inf':
+            nepochs = int(args.nepochs)
+        else:
+            nepochs = args.nepochs
+    else:
+        nepochs = 100    
+    
+    if args.nonlinearity is not None:
+        nonlinearity = args.nonlinearity
+    else:
+        nonlinearity = 'tanh'
+    
+    if args.reload is not None:
+        reload = True
+        reload_file = args.reload
+    else:
+        reload = False
+    
+    digits = args.digits
+    print(digits)
+    print(lr) 
+    print(nepochs)
+    net = Net(args.ModelType,args.ninputs,args.nhidden,args.batch_size,input_bias=input_bias,posW = posW,digits = digits,noise=noise,nonlinearity=nonlinearity,pixel_by_pixel=pixel_by_pixel)
     net.initialize(args.ConnType,nNN=nNN,p=p,suffix=suffix,gain=init_gain)
+    if reload:
+        net.Reinitialize(reload_file)
+        if digits:
+            if nepochs =='inf':
+                net.OutputDir = os.path.join(net.OutputDir, "generalize")
+            elif nepochs == 1:
+                net.OutputDir = os.path.join(net.OutputDir, "oneshot")
+        else:
+            net.OutputDir = os.path.join(net.OutputDir,"fully_trained")
+        if not os.path.exists(net.OutputDir):
+            os.mkdir(net.OutputDir)
     net.to(device)
     
     
     if suffix is not None:
         net.OutFile = "_".join((net.OutFile,suffix))
     print(net.OutputDir)
-        
-    net.train(save_gradients = save_gradients,pixel_by_pixel = pixel_by_pixel,lr = lr)
+    
+    epoch = 0
+  
+    if nepochs == 'inf':
+        print('creating early stopping class')
+        es = EarlyStopping(patience=10,mode='max')
+
+        num_epochs = 1000
+        for epoch in range(num_epochs):
+            valacc = net.train(save_gradients = save_gradients,pixel_by_pixel = pixel_by_pixel,lr = lr)
+            print(epoch, valacc)
+            if es.step(valacc):
+                break  # early stop criterion is met, we can stop now
+                
+        '''
+        valacc =torch.from_numpy(np.array(0.0)).type(torch.float32).to(device)
+        last_valacc = []
+        for i in range(5):
+            last_valacc.append(valacc -.2)
+        while valacc > torch.mean(torch.stack(last_valacc)):
+            last_valacc.append(valacc)
+            last_valacc.pop(0)
+            valacc = net.train(save_gradients = save_gradients,pixel_by_pixel = pixel_by_pixel,lr = lr)
+            print(epoch,valacc)
+            epoch += 1
+        '''        
+    else:
+        for epoch in range(nepochs):
+            valacc = net.train(save_gradients = save_gradients,pixel_by_pixel = pixel_by_pixel,lr = lr)
+            print(epoch, valacc)
+            epoch += 1
+            
+            
+            
+            
+            

@@ -247,7 +247,7 @@ def GetModelWeights(file,initial = False,device='cpu'):
     
 
 
-def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,digits = False, pixel = False, narrow = False, suffix="", add_dir=None):
+def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,v1dd = False, digits = False, pixel = False, narrow = False, suffix="", add_dir=None):
     '''
     
     
@@ -276,7 +276,7 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,digits
             dir = os.path.join(dir, "pixel_by_pixel")
         elif narrow:
             dir = os.path.join(dir, "narrow")
-     
+    
     if add_dir is not None:
         add_dir =  add_dir
     else:
@@ -294,9 +294,18 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,digits
             gain = list(set([float(file.split("gain_")[1].split("_")[0]) for file in files]))
             gain.sort()
     elif em:
-        files = glob.glob(os.path.join(dir,"EM_column","EM_column_198*ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
-        files.extend(glob.glob(os.path.join(dir,"EM_column","EM_column_198*ninputs_28_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
-        files.extend(glob.glob(os.path.join(dir,"EM_column","EM_column_198*ninputs_28_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+       files = glob.glob(os.path.join(dir,"EM_column","microns","EM_column_198*ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
+       files.extend(glob.glob(os.path.join(dir,"EM_column","microns""EM_column_198*ninputs_28_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+       files.extend(glob.glob(os.path.join(dir,"EM_column","microns","EM_column_198*ninputs_28_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+       if len(files) >0:
+            nNN = [198]
+            p = [0]
+            gain = list(set([float(file.split("gain_")[1].split("_")[0]) for file in files]))
+            gain.sort()
+    elif v1dd:
+        files = glob.glob(os.path.join(dir,"EM_column","v1dd","v1dd_198*ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
+        files.extend(glob.glob(os.path.join(dir,"EM_column","v1dd,'v1dd_198*ninputs_28_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+        files.extend(glob.glob(os.path.join(dir,"EM_column","v1dd","v1dd_198*ninputs_28_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))
         if len(files) >0:
             nNN = [198]
             p = [0]
@@ -313,7 +322,7 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,digits
         
     return {'nNN':nNN,'p':p,'gain':gain}
   
-def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False,em = False,digits = False,pixel = False, narrow = False, add_dir = None,suffix=""):
+def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False,em = False,v1dd = False, digits = False,pixel = False, narrow = False, add_dir = None,suffix=""):
     '''
     Return Trained Model Filenames with particular number of nearest neighbors and probability of rewiring
 
@@ -349,7 +358,9 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     if density:
         dir = os.path.join(dir, "Density")
     elif em:
-        dir = os.path.join(dir, "EM_column")
+        dir = os.path.join(dir, "EM_column","microns")
+    elif v1dd:
+        dir = os.path.join(dir, "EM_column","v1dd")
     else:
         dir = os.path.join(dir, "Gaussian")
         
@@ -359,7 +370,7 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     if add_dir is not None:
         dir = os.path.join(dir,add_dir)
         
-    if not density and not em:
+    if not density and not em and not v1dd:
         files = glob.glob(os.path.join(dir,"WattsStrogatz_*ninputs_*nNN*_p*_gain_???"+suffix+"_Run_[0-9]*"))
         files.extend(glob.glob(os.path.join(dir,"WattsStrogatz_*ninputs_*nNN*_p_*_gain_????"+suffix+"_Run_[0-9]*")))
         files = [f for f in files if 'nNN'+str(nNN) in f and 'p_'+"{:.1f}".format(p) in f and 'gain_'+str(gain) in f]
@@ -373,7 +384,12 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
         files.extend(glob.glob(os.path.join(dir,"EM_column_198*ninputs_*_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
         files.extend(glob.glob(os.path.join(dir,"EM_column_198*ninputs_*_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))      
         files = [f for f in files if str(nNN) in f  and 'gain_'+str(gain) in f]
-       
+    elif v1dd:   
+        print(dir)
+        files = glob.glob(os.path.join(dir,"v1dd_198*ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
+        files.extend(glob.glob(os.path.join(dir,"v1dd_198*ninputs_*_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+        files.extend(glob.glob(os.path.join(dir,"v1dd_198*ninputs_*_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))      
+        files = [f for f in files if str(nNN) in f  and 'gain_'+str(gain) in f]
         
     files =[f for f in files if  ".png" not in f]
     files =[f for f in files if  ".npy" not in f]
@@ -387,7 +403,7 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     return files
 
 
-def GetInitializedModel(file,initial = False,batch_size = None,noise = False, device='cpu'):
+def GetInitializedModel(file,initial = False,batch_size = None,noise = False, device='cpu',suffix = None):
     '''
     Load a model and return model instance initialized and ready to run:
     net.forward(images)
@@ -415,9 +431,9 @@ def GetInitializedModel(file,initial = False,batch_size = None,noise = False, de
     net = Network.Net(model['config']['ModelType'],model['config']['ninputs'],model['config']['nhidden'],\
                       batch_size,input_bias=False,noise = noise,device = device) 
     if 'gain' in model.keys():
-        net.initialize(model['ConnType']['ConnType'],nNN = model['ConnType']['nNN'],p=model['ConnType']['p'],gain = model['Gain'])
+        net.initialize(model['ConnType']['ConnType'],nNN = model['ConnType']['nNN'],p=model['ConnType']['p'],gain = model['Gain'],suffix = suffix)
     else:
-        net.initialize(model['ConnType']['ConnType'],nNN = model['ConnType']['nNN'],p=model['ConnType']['p'],gain = 1.0)
+        net.initialize(model['ConnType']['ConnType'],nNN = model['ConnType']['nNN'],p=model['ConnType']['p'],gain = 1.0,suffix = suffix)
          
     
     if initial:

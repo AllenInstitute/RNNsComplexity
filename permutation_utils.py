@@ -9,10 +9,9 @@ Created on Wed Aug  2 12:09:35 2023
 import numpy as np
 import os
 
-rng = np.random.default_rng(8)
 
 
-def block_permute(file,suffix = ""):
+def block_permute(file,rng,suffix = "",save = False):
     CM = np.load(file)
     permuted = np.zeros_like(CM)
     permuted = permuted.flatten()
@@ -24,4 +23,6 @@ def block_permute(file,suffix = ""):
     npermute = rng.choice(neg, neg.size, replace = False)
     permuted[neg]  =  npermute
     permuted = permuted.reshape(CM.shape)
-    np.save(os.path.join(os.path.dirname(file), os.path.basename(file) +"_block_permuted"+suffix+".npy"),permuted)
+    if save:
+        np.save(os.path.join(os.path.dirname(file), os.path.basename(file) +"_block_permuted"+suffix+".npy"),permuted)
+    return permuted

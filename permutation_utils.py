@@ -8,7 +8,24 @@ Created on Wed Aug  2 12:09:35 2023
 
 import numpy as np
 import os
+import networkx as nx
 
+
+
+def get_degree_distribution(CM):
+    DG = nx.from_numpy_array(CM, create_using=nx.DiGraph)
+    degree_sequence = sorted((d for n, d in DG.degree()), reverse=True)
+    return degree_sequence
+    
+def get_indegree_distribution(CM):
+    DG = nx.from_numpy_array(CM, create_using=nx.DiGraph)
+    degree_sequence = sorted((d for n, d in DG.in_degree()), reverse=True)
+    return degree_sequence
+
+def get_outdegree_distribution(CM):
+    DG = nx.from_numpy_array(CM, create_using=nx.DiGraph)
+    degree_sequence = sorted((d for n, d in DG.out_degree()), reverse=True)
+    return degree_sequence
 
 
 def block_permute(file,rng,suffix = "",save = False):

@@ -424,13 +424,22 @@ def GetInitializedModel(file,initial = False,batch_size = None,noise = False, de
         network model reinitialized with parametersr.
 
     '''
+    
+    run = file.split("Run_")
+    if len(run) > 0:
+        run = int(run[1])
+    else:
+        run = None
+    
+    
     model = torch.load(file,map_location=device)
     if batch_size is None:
         batch_size = model['config']['batch_size']
     
     net = Network.Net(model['config']['ModelType'],model['config']['ninputs'],model['config']['nhidden'],\
-                      batch_size,input_bias=False,noise = noise,device = device) 
-    if 'gain' in model.keys():
+                      batch_size,input_bias=False,noise = noise,device = device,run = run)
+    
+    if 'Gain' in model.keys():
         net.initialize(model['ConnType']['ConnType'],nNN = model['ConnType']['nNN'],p=model['ConnType']['p'],gain = model['Gain'],suffix = suffix)
     else:
         net.initialize(model['ConnType']['ConnType'],nNN = model['ConnType']['nNN'],p=model['ConnType']['p'],gain = 1.0,suffix = suffix)

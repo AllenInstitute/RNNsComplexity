@@ -14,19 +14,32 @@ if torch.cuda.is_available():
 else:
     device = torch.device('cpu')
 
-dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity"
 #Find out what trained models are available
 #returns a dict with nNN = number of nearest neighbors and p = rewiring probability gain gain runs
-params = GetModelFileParameters(Density = False,em = False,dir = dir)
+params = GetModelFileParameters()
 print(params)
+
+
+
 
 #Find files with selected run params
 #There are generally 10 runs of each with different initializations
 nNN = params['nNN'][0]
 prob = params['p'][0]
 gain = params['gain'][0]
-files = GetModelFiles(nNN,prob,gain = gain,\
-                      noise = False,density=False,em = False,dir = dir)
+suffix = ""
+files = GetModelFiles(nNN,prob,gain = gain)
+
+
+#To find paramters for v1dd data
+params = GetModelFileParameters(v1dd = True, suffix="23_4_")
+
+#For v1dd files
+nNN = params['nNN'][0]
+prob = params['p'][0]
+gain = params['gain'][0]
+suffix = "23_4"
+files = GetModelFiles(nNN,prob,gain = gain,v1dd = True, suffix= suffix)
 
     
     
@@ -42,7 +55,7 @@ ShuffledWeights = Shuffle_Weights(Weights)
 #Get Network instance re-initialized with trained model params
 #May generate a warning, but if so, this can be ignored.
 batch_size = 100
-net = GetInitializedModel(file,initial = False,batch_size = batch_size,noise = False,device = device)
+net = GetInitializedModel(file,initial = False,batch_size = batch_size,noise = False,device = device,suffix=suffix)
 
 #Get a training batch for this network
 batch = GetMNIST_TrainData(net)

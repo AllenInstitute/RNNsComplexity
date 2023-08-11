@@ -39,14 +39,33 @@ nNN = params['nNN'][0]
 prob = params['p'][0]
 gain = params['gain'][0]
 suffix = "23_4_"
-files = GetModelFiles(nNN,prob,gain = gain,v1dd = True, suffix= suffix)
+#This will return all the Files for all the gains
+Files = [GetModelFiles(198,0,gain =g,v1dd =True, suffix = "23_4_") for g in params['gain']]
+batch_size = 100
 
-    
+for g, gain in enumerate(params['gain']):
+    for file in Files[g]: #There should be 10 models for each gain
+        #load trained model
+        net = GetInitializedModel(file,initial = False,batch_size = batch_size,noise = False,device = device,suffix=suffix)
+        #load untrained model
+        net = GetInitializedModel(file,initial = True,batch_size = batch_size,noise = False,device = device,suffix=suffix)
+
+  
     
     
 #Get Hidden Weights from trained model reloaded from the first file
 #Returns model weights at initialziaton if init = True
 file = files[0]
+#Get Network instance re-initialized with trained model params
+#May generate a warning, but if so, this can be ignored.
+batch_size = 100
+#load trained model
+net = GetInitializedModel(file,initial = False,batch_size = batch_size,noise = False,device = device,suffix=suffix)
+#load untrained model
+net = GetInitializedModel(file,initial = True,batch_size = batch_size,noise = False,device = device,suffix=suffix)
+
+
+
 Weights = GetModelWeights(file,initial=False)
 
 #Get Shuffled Version of weights

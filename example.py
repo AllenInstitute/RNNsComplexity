@@ -38,7 +38,7 @@ params = GetModelFileParameters(v1dd = True, suffix="23_4_")
 nNN = params['nNN'][0]
 prob = params['p'][0]
 gain = params['gain'][0]
-suffix = "23_4"
+suffix = "23_4_"
 files = GetModelFiles(nNN,prob,gain = gain,v1dd = True, suffix= suffix)
 
     
@@ -58,16 +58,20 @@ batch_size = 100
 net = GetInitializedModel(file,initial = False,batch_size = batch_size,noise = False,device = device,suffix=suffix)
 
 #Get a training batch for this network
-batch = GetMNIST_TrainData(net)
-images, label =  next(batch)
-images = image.to(device)
+iter_train_data = GetMNIST_TrainData(net)
+images, labels = next(iter_train_data)
+images = images.reshape(net.batch_size, net.ninputs, int(images.shape[1]/net.ninputs))
+images = images.permute(2,0,1)
+images = images.to(device)
 
 
 
 #Get a testing batch for this network
-batch = GetMNIST_TestData(net)
-images, label =  next(batch)
-images = image.to(device)
+iter_test_data = GetMNIST_TestData(net)
+images, labels = next(iter_test_data)
+images = images.reshape(net.batch_size, net.ninputs, int(images.shape[1]/net.ninputs))
+images = images.permute(2,0,1)
+images = images.to(device)
 
 #Run this network forward on an MNIST batch return predictions [batch_size,ndigits = 10]
 out = net.model.forward(images)

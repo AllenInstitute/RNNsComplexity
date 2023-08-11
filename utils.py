@@ -265,9 +265,9 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,v1dd =
     assert not (em and Density)
     
     if NetworkType == 'RNN':
-        dir = "RNN"
+        dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/RNN"
     elif NetworkType == "Kuramoto":
-        dir = "Kuramoto"
+        dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/Kuramoto"
     
     if digits or narrow or pixel:
         if digits:
@@ -343,9 +343,9 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     '''
     assert not (em and density)
     if NetworkType == 'RNN':
-        dir = "RNN"
+        dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/RNN"
     elif NetworkType == "Kuramoto":
-        dir = "Kuramoto"
+        dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/Kuramoto"
     
     if digits or narrow or pixel:
         if digits:
@@ -467,10 +467,7 @@ def GetMNIST_TestData(net):
     One sMNIST Batch.
 
     '''
-    for images,labels in iter(net.dl.test_loader):
-        images = images.reshape(net.batch_size, net.ninputs, int(images.shape[1]/net.ninputs))
-        images = images.permute(2,0,1)
-        yield images,labels
+    return iter(net.dl.test_loader)
    
 
 
@@ -488,8 +485,4 @@ def GetMNIST_TrainData(net):
     One sMNIST Batch.
 
     '''
-    for images,labels in iter(net.dl.train_loader):
-        images = images.reshape(net.batch_size, net.ninputs, int(images.shape[1]/net.ninputs))
-        images = images.permute(2,0,1)
-        return images,labels
-                    
+    return iter(net.dl.train_loader)

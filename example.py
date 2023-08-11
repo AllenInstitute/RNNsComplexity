@@ -35,9 +35,6 @@ files = GetModelFiles(nNN,prob,gain = gain)
 params = GetModelFileParameters(v1dd = True, suffix="23_4_")
 
 #For v1dd files
-nNN = params['nNN'][0]
-prob = params['p'][0]
-gain = params['gain'][0]
 suffix = "23_4_"
 #This will return all the Files for all the gains
 Files = [GetModelFiles(198,0,gain =g,v1dd =True, suffix = "23_4_") for g in params['gain']]

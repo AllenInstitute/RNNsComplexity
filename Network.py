@@ -19,6 +19,7 @@ import argparse
 import sys
 import socket
 from scipy import stats
+from permutation_utils import get_degree_distribution,get_indegree_distribution, get_outdegree_distribution
 
 hostname = socket.gethostname()
 if 'zuul' in hostname:
@@ -41,31 +42,6 @@ else:
 def transform_log_normal(weights):
     return torch.exp(weights)
 
-
-def block_permutation(CM):
-    excitatory = list(np.where(np.array([np.all(CM[row,np.nonzero(CM[row,:])] > 0) for row in range(CM.shape[0])]) == True)[0])
-    inhibitory = list(np.where(np.array([np.all(CM[row,np.nonzero(CM[row,:])] < 0) for row in range(CM.shape[0])]) == True)[0])
-    locs = np.ix_(excitatory, excitatory)
-    E_E = CM[locs]
-    nz = np.nonzero(E_E)
-    permuted = rng.choice(E_E[nz],nz[0].size, replace = False)
-    CM[locs][nz] = permuted
-    locs = np.ix_(inhibitory, inhibitory)    
-    I_I = CM[locs]
-    nz = np.nonzero(I_I)
-    permuted = rng.choice(I_I[nz],nz[0].size, replace = False)
-    CM[locs][nz] = permuted
-    locs = np.ix_(excitatory, inhibitory)
-    E_I = CM[locs]
-    nz = np.nonzero(E_I)
-    permuted = rng.choice(E_I[nz],nz[0].size, replace = False)
-    CM[locs][nz] = permuted
-    locs = np.ix_(inhibitory, excitatory)
-    I_E = CM[locs]
-    nz = np.nonzero(I_E)
-    permuted = rng.choice(I_E[nz],nz[0].size, replace = False)
-    CM[locs][nz] = permuted
-    return CM
     
 
 class EarlyStopping(object):
@@ -232,7 +208,8 @@ class RNN(nn.Module):
        self.cell.weight_hh.data = mat 
        
        self.Connections = torch.zeros(self.cell.weight_hh.shape)
-       self.Connections[mat!=0] = 1
+       self.Connections[mat>0] = 1
+       self.Connections[mat<0] = -1
        InitialParameters = list(self.named_parameters())
        InitialState = []
        for param in InitialParameters:
@@ -244,16 +221,21 @@ class RNN(nn.Module):
         with torch.no_grad():
             for MParam in ModelParams:
                 savedval = [param for param in model if param[0] == MParam[0]]
+                print(MParam[0],savedval[0][0],len(savedval))
                 MParam[1].copy_(savedval[0][1])
+                assert torch.equal(MParam[1].data , savedval[0][1])
+        self.initialize(self.cell.weight_hh.data)
+        
        
-    def PermuteInputOutput(self):
+    def PermuteInputOutput(self,rng):
         Wih  = self.cell.weight_ih.data.clone()
         Wr = self.readout.weight.data.clone()
-        permute = self.rng.choice(Wih.flatten(), Wih.numel(), replace = False).reshape(Wih.shape)
+        permute = rng.choice(Wih.flatten(), Wih.numel(), replace = False).reshape(Wih.shape)
         self.cell.weight_ih.data = torch.from_numpy(permute).type(torch.float32)
-        permute = self.rng.choice(Wr.flatten(), Wr.numel(), replace = False).reshape(Wr.shape)
+        permute = rng.choice(Wr.flatten(), Wr.numel(), replace = False).reshape(Wr.shape)
         self.readout.weight.data = torch.from_numpy(permute).type(torch.float32)
         
+    
     def save(self):
         pass
     
@@ -262,9 +244,14 @@ class RNN(nn.Module):
     
     def Clamp_Grads(self):
         self.cell.weight_hh.grad[self.Connections ==0] = 0
-        
-    def Clamp_Weights(self):
-        self.cell.weight_hh.data.clamp_(0)
+    
+           
+    def Clamp_Weights(self,Dales = False):
+        if Dales:
+            self.cell.weight_hh.data[self.Connections >0] = self.cell.weight_hh.data[self.Connections >0].clamp(min = .0001)
+            self.cell.weight_hh.data[self.Connections <0] = self.cell.weight_hh.data[self.Connections <0].clamp(max = -.0001)
+        else:
+            self.cell.weight_hh.data.clamp_(0)
         
     def forward(self, x, initial_state = None,stateOnly=None):
         if initial_state is None:
@@ -588,7 +575,7 @@ class Kuramoto(nn.Module):
 
 class Net(nn.Module):
     #Main network class
-    def __init__(self,ModelType,ninputs, nhidden,batch_size,input_bias=True,posW = False,digits = None,noise=False,device=device,nonlinearity = 'tanh',pixel_by_pixel= False,run = None):
+    def __init__(self,ModelType,ninputs, nhidden,batch_size,input_bias=True,posW = False,digits = None,noise=False,device=device,nonlinearity = 'tanh',pixel_by_pixel= False,run = None,permuted = False):
         '''
         Params
         
@@ -655,7 +642,7 @@ class Net(nn.Module):
                            "nhidden":nhidden,\
                            "batch_size":batch_size}
         
-        self.dl  = sMNIST(batch_size,digits = digits)
+        self.dl  = sMNIST(batch_size,digits = digits,permuted = permuted)
         self.TrainingLoss = []
         self.ValidationLoss = []
         self.TrainingAccuracy = []
@@ -722,13 +709,69 @@ class Net(nn.Module):
         self.rng = np.random.default_rng(self.seed)
         torch.manual_seed(self.seed)
         if initial == False:
+            print("Initializing from final parameters")
             self.model.Reinitialize(saved['Parameters'])
         else:
             self.model.Reinitialize(saved['InitialState'])
+     
+    def block_permutation(self, CM):
+        CM_permuted = np.zeros_like(CM)
+        excitatory = list(np.where(np.array([np.all(CM[row,np.nonzero(CM[row,:])] > 0) for row in range(CM.shape[0])]) == True)[0])
+        inhibitory = list(np.where(np.array([np.all(CM[row,np.nonzero(CM[row,:])] < 0) for row in range(CM.shape[0])]) == True)[0])
+        locs = np.ix_(excitatory, excitatory)
+        permuted_locs = self.rng.permutation(CM[locs].flatten()).reshape(locs[0].size, locs[1].size)
+        CM_permuted[locs] = permuted_locs
         
+        locs = np.ix_(inhibitory, inhibitory)    
+        permuted_locs = self.rng.permutation(CM[locs].flatten()).reshape(locs[0].size, locs[1].size)
+        CM_permuted[locs] = permuted_locs
         
+        locs = np.ix_(excitatory, inhibitory)
+        permuted_locs = self.rng.permutation(CM[locs].flatten()).reshape(locs[0].size, locs[1].size)
+        CM_permuted[locs] = permuted_locs
         
-    def initialize(self,ConnType,nNN = None, p = .1,reverse=False,Neighborhood = None,suffix="",gain = 1.0):
+        locs = np.ix_(inhibitory, excitatory)
+        permuted_locs = self.rng.permutation(CM[locs].flatten()).reshape(locs[0].size, locs[1].size)
+        CM_permuted[locs] = permuted_locs
+        
+        return CM_permuted
+
+    
+    def block_permutation_topography(self, CM):
+        excitatory = list(np.where(np.array([np.all(CM[row,np.nonzero(CM[row,:])] > 0) for row in range(CM.shape[0])]) == True)[0])
+        inhibitory = list(np.where(np.array([np.all(CM[row,np.nonzero(CM[row,:])] < 0) for row in range(CM.shape[0])]) == True)[0])
+        locs = np.ix_(excitatory, excitatory)
+        E_E = CM[locs]
+        nz = np.nonzero(E_E)
+        permuted = self.rng.choice(E_E[nz],nz[0].size, replace = False)
+        E_E[nz] = permuted
+        CM[locs] = E_E
+        
+        locs = np.ix_(inhibitory, inhibitory)    
+        I_I = CM[locs]
+        nz = np.nonzero(I_I)
+        permuted = self.rng.choice(I_I[nz],nz[0].size, replace = False)
+        I_I[nz] = permuted
+        CM[locs] = I_I
+        
+        locs = np.ix_(excitatory, inhibitory)
+        E_I = CM[locs]
+        nz = np.nonzero(E_I)
+        permuted = self.rng.choice(E_I[nz],nz[0].size, replace = False)
+        E_I[nz] = permuted
+        CM[locs] = E_I
+        
+        locs = np.ix_(inhibitory, excitatory)
+        I_E = CM[locs]
+        nz = np.nonzero(I_E)
+        permuted = self.rng.choice(I_E[nz],nz[0].size, replace = False)
+        I_E[nz] = permuted
+        CM[locs] = I_E
+        
+        return CM    
+
+    
+    def initialize(self,ConnType,nNN = None, p = .1,reverse=False,Neighborhood = None,suffix="",gain = 1.0,Dales = False):
         '''
         Initialize network model
         Must be run before training and before Re-initializing 
@@ -756,6 +799,7 @@ class Net(nn.Module):
         self.ConnType = {"ConnType":ConnType, 'nNN':nNN,'p':p,'Neighbrhood':Neighborhood}
         self.OutFile = "_".join((ConnType,str(self.nhidden),"ninputs",str(self.ninputs)))
         self.gain = gain
+        self.Dales = Dales
         if ConnType=='Random': #Erdos Remyi
             if nNN is None:
                 nNN = self.ninputs
@@ -770,23 +814,61 @@ class Net(nn.Module):
             CM = torch.from_numpy(CM.reshape((self.nhidden,self.nhidden))).type(torch.float32)
             self.OutFile = self.OutFile + "_".join(("nNN"+str(nNN),"p",str(p)))
         elif ConnType == 'WattsStrogatz':
+            self.OutputDir = os.path.join(self.OutputDir, "Gaussian")
             CM = nx.watts_strogatz_graph(self.nhidden,nNN,p,seed = self.seed)
-            CM = nx.to_numpy_matrix(CM).flatten()
+            CM = nx.to_numpy_matrix(CM)
             nz = np.nonzero(CM)
             std = self.gain*1/np.sqrt(np.sqrt(len(nz[0])))
             #vals = self.rng.uniform(-std,std,len(nz[0]))
             vals = self.rng.normal(0,std,len(nz[0]))
-            CM[nz] = vals
-            CM = torch.from_numpy(CM.reshape((self.nhidden,self.nhidden))).type(torch.float32)
-            self.OutputDir = os.path.join(self.OutputDir, "Gaussian")
+            if self.Dales:
+                self.OutputDir = os.path.join(self.OutputDir,"Dales")  
+                svals = np.sort(vals)
+                start = 0
+                for i in range(self.nhidden):
+                    rnz = np.nonzero(CM[i,:])
+                    if (np.all(svals[start:start+ rnz[1].size] < 0)) or (np.all(svals[start:start + rnz[1].size] > 0)):
+                        CM[i,rnz[1]]  = svals[start:start+rnz[1].size]
+                    else:
+                        lt = np.where(svals[start:start+rnz[1].size] <0)
+                        if lt[0].size < (self.nhidden/2):
+                            CM[i,rnz[1]] = np.abs(svals[start:start+rnz[1].size])
+                        else:
+                            CM[i,rnz[1]] = -1*np.abs(svals[start:start+rnz[1].size])
+                    start += rnz[1].size       
+            else:
+                CM[nz] = vals
+            CM = torch.from_numpy(CM).type(torch.float32)
+            
+            
             if not os.path.exists(self.OutputDir):
                 os.makedirs(self.OutputDir)
             if self.noise:
                 self.OutputDir = os.path.join(self.OutputDir, "noise")
             self.OutFile = self.OutFile + "_".join(("nNN"+str(nNN),"p",str(p),"gain",str(gain)))
+        
+        elif ConnType == "DegreeDistribution":
+            if 'zuul' in hostname:
+                connectome_dir = "/home/dana/allen/programs/mindscope/workgroups/tiny-blue-dot/EM/v1dd"
+            else:
+                connectome_dir = "/allen/programs/mindscope/workgroups/tiny-blue-dot/EM/v1dd"
             
+            CM = np.load(os.path.join(connectome_dir,"23_4.npy"))
+            CM = CM/np.max(np.abs(CM))
+            idd = get_indegree_distribution(CM)
+            odd= get_outdegree_distribution(CM)
+            random_dd = nx.directed_configuration_model(idd,odd,create_using = nx.DiGraph())
+            random_dd.remove_edges_from(nx.selfloop_edges(random_dd))
+            cm = nx.to_numpy_matrix(random_dd)
+            nz = np.nonzero(cm)
+            std = 1/np.sqrt(np.sqrt(nz[0].size))
+            weights = self.rng.normal(loc=0.0, scale=std, size=nz[0].size)
+            cm[nz] = weights
+            CM = torch.from_numpy(cm*self.gain).type(torch.float32)
+            self.OutputDir = os.path.join(self.OutputDir, "degree_dist")
+            self.OutFile = self.OutFile + "_".join(("_gain",str(gain)))
         elif ConnType == 'Density':
-            f = open('../MesoScope/Cortex_Thal_Cla_HippN198.sav', 'rb')
+            f = open('/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/MesoScope/Cortex_Thal_Cla_HippN198.sav', 'rb')
             df = pickle.load(f)
             f.close()
             CM= df['Density']
@@ -839,7 +921,7 @@ class Net(nn.Module):
             CM = CM/np.max(np.abs(CM))
             nz = np.nonzero(CM)
             if 'block_permuted' in suffix:
-                CM = block_permutation(CM)
+                CM = self.block_permutation(CM)
             elif 'permuted' in suffix:
                 weights = CM.copy()
                 nzw = np.nonzero(weights)
@@ -876,7 +958,14 @@ class Net(nn.Module):
                 CM = np.load(os.path.join(connectome_dir,"4.npy"))
                 CM = CM/np.max(np.abs(CM))    
             if 'block_permuted' in suffix:
-                CM = block_permutation(CM)
+                CM = self.block_permutation(CM)
+            elif 'permutedT' in suffix:
+                cm = np.zeros_like(CM)
+                nz = np.nonzero(CM)
+                weights = CM[nz]
+                permuted = self.rng.permutation(weights)
+                cm[nz] = permuted
+                CM = cm
             elif 'permuted' in suffix:
                 weights = CM.copy()
                 nzw = np.nonzero(weights)
@@ -900,14 +989,24 @@ class Net(nn.Module):
                 shift = np.abs(np.min(transformed)) 
                 shifted = transformed + shift + 1
                 CMt, _ = stats.boxcox(shifted[nz].flatten())
-                CMt = CMt -shift
                 CMt = CMt/np.max(CMt)
                 transformed[nz] = CMt
                 transformed[nz] = (transformed[nz] - np.mean(transformed[nz]))/np.std(transformed[nz])
                 transformed = transformed*std
                 CM[nz] = transformed[nz]
+            elif 'flipped' in suffix:
+                CM = -1*CM
+            elif 'topology' in suffix:
+                nz = np.nonzero(CM)
+                std = 1/np.sqrt(np.sqrt(len(nz[0])))
+                #vals = self.rng.uniform(-std,std,len(nz[0]))
+                vals = self.rng.normal(0,std,len(nz[0]))
+                CM[nz] = vals
             CM = torch.from_numpy(CM*self.gain).type(torch.float32)
-            self.OutputDir = os.path.join(self.OutputDir, "EM_column","v1dd")  
+            if self.Dales:
+                self.OutputDir = os.path.join(self.OutputDir, "EM_column","v1dd","Dales")  
+            else:
+                self.OutputDir = os.path.join(self.OutputDir, "EM_column","v1dd")
             self.OutFile = self.OutFile + "_gain_"+str(gain)  
         elif ConnType == 'NearestNeighbors' :
             self.OutFile = self.OutFile + "_".join(("Neighborhood"+Neighborhood))
@@ -1010,9 +1109,10 @@ class Net(nn.Module):
             #for p in params:
             #    print(p.grad)
             self.model.Clamp_Grads()
-            if self.posW:
-                self.model.Clamp_Weights()
             optimizer.step()
+            if self.posW or self.Dales:
+                self.model.Clamp_Weights(self.Dales)
+            
             if save_gradients:
                 if i in sample:
                     grads = {}
@@ -1034,7 +1134,7 @@ class Net(nn.Module):
         
 
 class sMNIST():
-    def __init__(self,batch_size,digits = None):
+    def __init__(self,batch_size,digits = None,permuted = False):
         '''
         Sequential MNIST data loader 
 
@@ -1051,11 +1151,18 @@ class sMNIST():
         
         #Returns a Dataset
         
-        
-        transform = torchvision.transforms.Compose(
+        if not permuted:
+            transform = torchvision.transforms.Compose(
              [torchvision.transforms.ToTensor(),
               torchvision.transforms.Lambda(lambda x: x.view(-1,1))
              ])
+        else:
+            pixel_permutation = torch.randperm(28*28)
+            transform = torchvision.transforms.Compose(
+                 [torchvision.transforms.ToTensor(),
+                  torchvision.transforms.Lambda(lambda x: x.view(-1,1)[pixel_permutation])
+                 ])
+            
         train_dataset = torchvision.datasets.MNIST(root='MNIST/',
                                                train=True,
                                                transform=transform,
@@ -1089,15 +1196,6 @@ class sMNIST():
         self.test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
                                               batch_size=batch_size,
                                               shuffle=False,drop_last = True)
-
-class psMNIST():
-    def __init__(self):
-
-        pixel_permutation = torch.randperm(28*28)
-        transform = torchvision.transforms.Compose(
-             [torchvision.transforms.ToTensor(),
-              torchvision.transforms.Lambda(lambda x: x.view(-1,1)[pixel_permutation])
-             ])
         
         
 
@@ -1136,6 +1234,8 @@ if __name__ == "__main__":
     parser.add_argument("--reload_initial",type= str, required = False)
     parser.add_argument("--transform",type= str, required = False)# log-normal, power-law, gaussian etc
     parser.add_argument("--permuteIO", required = False, action = 'store_true')
+    parser.add_argument("--psMNIST",required = False, action = 'store_true')
+    parser.add_argument("--Dales",required = False, action = 'store_true')
     
     args = parser.parse_args()
     if args.nNN is not None:
@@ -1164,6 +1264,11 @@ if __name__ == "__main__":
         permuteIO  = args.permuteIO
     else:
         permuteIO = False
+    
+    if args.Dales is not None:
+        Dales  = args.Dales
+    else:
+        Dales = False
     
     print("permuteIO",permuteIO)
         
@@ -1214,6 +1319,11 @@ if __name__ == "__main__":
     else:
         reload = False
         
+    if args.psMNIST is not None:
+        psMNIST = args.psMNIST
+    else:
+        psMNIST = False
+        
         
     if args.reload_initial is not None:
         reload_initial = True
@@ -1231,8 +1341,8 @@ if __name__ == "__main__":
     print(digits)
     print(lr) 
     print(nepochs)
-    net = Net(args.ModelType,args.ninputs,args.nhidden,args.batch_size,input_bias=input_bias,posW = posW,digits = digits,noise=noise,nonlinearity=nonlinearity,pixel_by_pixel=pixel_by_pixel,run = run)
-    net.initialize(args.ConnType,nNN=nNN,p=p,suffix=suffix,gain=init_gain)
+    net = Net(args.ModelType,args.ninputs,args.nhidden,args.batch_size,input_bias=input_bias,posW = posW,digits = digits,noise=noise,nonlinearity=nonlinearity,pixel_by_pixel=pixel_by_pixel,run = run,permuted = psMNIST)
+    net.initialize(args.ConnType,nNN=nNN,p=p,suffix=suffix,gain=init_gain, Dales = Dales)
     if reload:
         net.Reinitialize(reload_file)
         if digits:
@@ -1245,14 +1355,18 @@ if __name__ == "__main__":
                 net.OutputDir = os.path.join(net.OutputDir,"permuteIO")
             else:    
                 net.OutputDir = os.path.join(net.OutputDir,"fully_trained")
-        if not os.path.exists(net.OutputDir):
-            os.mkdir(net.OutputDir)
+        
     elif reload_initial:
+        'reloading initial'
         net.Reinitialize(reload_file,iniital = True)
     
     if permuteIO:
-        net.model.PermuteInputOutput()
-        
+        net.model.PermuteInputOutput(net.rng)
+    
+    
+    if not os.path.exists(net.OutputDir):
+        os.mkdir(net.OutputDir)    
+    
     net.to(device)
     
     
@@ -1265,7 +1379,8 @@ if __name__ == "__main__":
     if nepochs == 'inf':
         print('creating early stopping class')
         es = EarlyStopping(patience=10,mode='max')
-
+        if reload:
+            print("orig test",net.test())
         num_epochs = 1000
         for epoch in range(num_epochs):
             valacc = net.train(save_gradients = save_gradients,pixel_by_pixel = pixel_by_pixel,lr = lr)

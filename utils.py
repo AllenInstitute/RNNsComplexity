@@ -247,7 +247,8 @@ def GetModelWeights(file,initial = False,device='cpu'):
     
 
 
-def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,v1dd = False, digits = False, pixel = False, narrow = False, suffix="", add_dir=None):
+def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,v1dd = False, digits = False, pixel = False, narrow = False, degree_distribution = False, 
+                           suffix="", add_dir=None,home =""):
     '''
     
     
@@ -265,10 +266,16 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,v1dd =
     assert not (em and Density)
     
     if NetworkType == 'RNN':
-        dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/RNN"
+        if home != "":
+            dir = os.path.join(home,"allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/RNN")
+        else:
+            dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/RNN"
     elif NetworkType == "Kuramoto":
-        dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/Kuramoto"
-    
+        if home != "":
+            dir = os.path.join(home,"allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/Kuramoto")
+        else:
+            dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/Kuramoto"
+   
     if digits or narrow or pixel:
         if digits:
             dir = os.path.join(dir, "digits")
@@ -281,7 +288,8 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,v1dd =
         add_dir =  add_dir
     else:
         add_dir = ""
-        
+    
+    
     nNN = []
     p = []
     gain = []
@@ -303,14 +311,24 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,v1dd =
             gain = list(set([float(file.split("gain_")[1].split("_")[0]) for file in files]))
             gain.sort()
     elif v1dd:
-        files = glob.glob(os.path.join(dir,"EM_column","v1dd","v1dd_198*ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
-        files.extend(glob.glob(os.path.join(dir,"EM_column","v1dd,'v1dd_198*ninputs_28_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
-        files.extend(glob.glob(os.path.join(dir,"EM_column","v1dd","v1dd_198*ninputs_28_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+        files = glob.glob(os.path.join(dir,"EM_column","v1dd",add_dir,"v1dd_198*ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
+        files.extend(glob.glob(os.path.join(dir,"EM_column","v1dd",add_dir,"v1dd_198*ninputs_28_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+        files.extend(glob.glob(os.path.join(dir,"EM_column","v1dd",add_dir,"v1dd_198*ninputs_28_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))
         if len(files) >0:
             nNN = [198]
             p = [0]
             gain = list(set([float(file.split("gain_")[1].split("_")[0]) for file in files]))
             gain.sort()
+    elif degree_distribution:
+        files = glob.glob(os.path.join(dir, "degree_dist","DegreeDistribution_198_ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
+        files.extend(glob.glob(os.path.join(dir, "degree_dist","DegreeDistribution_198_ninputs_28_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+        files.extend(glob.glob(os.path.join(dir, "degree_dist","DegreeDistribution_198_ninputs_28_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))  
+        nNN = [198]
+        p = [0]
+        gain = list(set([float(file.split("gain_")[1].split("_")[0]) for file in files]))
+        nNN.sort()
+        p.sort()
+        gain.sort()
     else:
         files = glob.glob(os.path.join(dir,"Gaussian",add_dir,"WattsStrogatz_*ninputs_*"+suffix+"Run_[0-9]*"))
         nNN = list(set([ int(file.split('nNN')[1].split("_")[0]) for file in files] ))
@@ -322,7 +340,8 @@ def GetModelFileParameters(NetworkType = 'RNN',Density = False,em = False,v1dd =
         
     return {'nNN':nNN,'p':p,'gain':gain}
   
-def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False,em = False,v1dd = False, digits = False,pixel = False, narrow = False, add_dir = None,suffix=""):
+def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False,em = False,v1dd = False, digits = False,pixel = False, narrow = False, 
+                  degree_distribution = False, add_dir = None,suffix="",home=""):
     '''
     Return Trained Model Filenames with particular number of nearest neighbors and probability of rewiring
 
@@ -343,10 +362,16 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     '''
     assert not (em and density)
     if NetworkType == 'RNN':
-        dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/RNN"
+        if home != "":
+            dir = os.path.join(home,"allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/RNN")
+        else:
+            dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/RNN"
     elif NetworkType == "Kuramoto":
-        dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/Kuramoto"
-    
+        if home != "":
+            dir = os.path.join(home,"allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/Kuramoto")
+        else:
+            dir = "/allen/programs/braintv/workgroups/tiny-blue-dot/RNN/Complexity/Kuramoto"
+            
     if digits or narrow or pixel:
         if digits:
             dir = os.path.join(dir, "digits")
@@ -357,6 +382,8 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     
     if density:
         dir = os.path.join(dir, "Density")
+    elif degree_distribution:
+        dir = os.path.join(dir, "degree_dist")
     elif em:
         dir = os.path.join(dir, "EM_column","microns")
     elif v1dd:
@@ -370,11 +397,8 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     if add_dir is not None:
         dir = os.path.join(dir,add_dir)
         
-    if not density and not em and not v1dd:
-        files = glob.glob(os.path.join(dir,"WattsStrogatz_*ninputs_*nNN*_p*_gain_???"+suffix+"_Run_[0-9]*"))
-        files.extend(glob.glob(os.path.join(dir,"WattsStrogatz_*ninputs_*nNN*_p_*_gain_????"+suffix+"_Run_[0-9]*")))
-        files = [f for f in files if 'nNN'+str(nNN) in f and 'p_'+"{:.1f}".format(p) in f and 'gain_'+str(gain) in f]
-    elif density:
+   
+    if density:
         files = glob.glob(os.path.join(dir,"Density_198*ninputs_28_Density_gain_???"+suffix+"_Run_[0-9]*"))
         files.extend(glob.glob(os.path.join(dir,"Density_198*ninputs_28_Density_gain_????"+suffix+"_Run_[0-9]*")))
         files = [f for f in files if str(nNN) in f  and 'gain_'+str(gain) in f]
@@ -385,11 +409,19 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
         files.extend(glob.glob(os.path.join(dir,"EM_column_198*ninputs_*_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))      
         files = [f for f in files if str(nNN) in f  and 'gain_'+str(gain) in f]
     elif v1dd:   
-        print(dir)
         files = glob.glob(os.path.join(dir,"v1dd_198*ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
         files.extend(glob.glob(os.path.join(dir,"v1dd_198*ninputs_*_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
         files.extend(glob.glob(os.path.join(dir,"v1dd_198*ninputs_*_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))      
         files = [f for f in files if str(nNN) in f  and 'gain_'+str(gain) in f]
+    elif degree_distribution:
+        files = glob.glob(os.path.join(dir, "DegreeDistribution_198_ninputs_28_gain_[0-9].[0-9][0-9]_"+suffix+"Run_[0-9]*"))
+        files.extend(glob.glob(os.path.join(dir,"DegreeDistribution_198_ninputs_28_gain_[0-9][0-9].[0-9]_"+suffix+"Run_[0-9]*")))
+        files.extend(glob.glob(os.path.join(dir,"DegreeDistribution_198_ninputs_28_gain_[0-9].[0-9]_"+suffix+"Run_[0-9]*")))   
+        files = [f for f in files if 'gain_'+str(gain) in f]
+    else:
+        files = glob.glob(os.path.join(dir,"WattsStrogatz_*ninputs_*nNN*_p*_gain_???"+suffix+"_Run_[0-9]*"))
+        files.extend(glob.glob(os.path.join(dir,"WattsStrogatz_*ninputs_*nNN*_p_*_gain_????"+suffix+"_Run_[0-9]*")))
+        files = [f for f in files if 'nNN'+str(nNN) in f and 'p_'+"{:.1f}".format(p) in f and 'gain_'+str(gain) in f]
         
     files =[f for f in files if  ".png" not in f]
     files =[f for f in files if  ".npy" not in f]
@@ -403,7 +435,7 @@ def GetModelFiles(nNN, p,gain=None,NetworkType='RNN',noise = False,density=False
     return files
 
 
-def GetInitializedModel(file,initial = False,batch_size = None,noise = False, device='cpu',suffix = None):
+def GetInitializedModel(file,initial = False,batch_size = None,noise = False, device='cpu',suffix = None,Dales = False):
     '''
     Load a model and return model instance initialized and ready to run:
     net.forward(images)
@@ -440,9 +472,9 @@ def GetInitializedModel(file,initial = False,batch_size = None,noise = False, de
                       batch_size,input_bias=False,noise = noise,device = device,run = run)
     
     if 'Gain' in model.keys():
-        net.initialize(model['ConnType']['ConnType'],nNN = model['ConnType']['nNN'],p=model['ConnType']['p'],gain = model['Gain'],suffix = suffix)
+        net.initialize(model['ConnType']['ConnType'],nNN = model['ConnType']['nNN'],p=model['ConnType']['p'],gain = model['Gain'],suffix = suffix,Dales = Dales)
     else:
-        net.initialize(model['ConnType']['ConnType'],nNN = model['ConnType']['nNN'],p=model['ConnType']['p'],gain = 1.0,suffix = suffix)
+        net.initialize(model['ConnType']['ConnType'],nNN = model['ConnType']['nNN'],p=model['ConnType']['p'],gain = 1.0,suffix = suffix,Dales =Dales)
          
     
     if initial:
